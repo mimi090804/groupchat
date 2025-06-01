@@ -12,7 +12,9 @@ id_peer_peer_nachr = 4
 id_ablehnung = 5
 id_bad_format = 6
 
-server_ip = '127.0.0.1'
+#server_ip = '127.0.0.1'
+server_ip = '100.110.194.138'
+
 # question: wie auf die Zahlen gekommen
 server_port = 22222
 udp_port = 33333
@@ -59,55 +61,94 @@ def udp_listener():
         msg = data.decode('utf-8')
         parts = msg.split('|')
         if len(parts) != 3:
-            continue # bad format
+            continue
         peer_nick, peer_ip, peer_tcp_port = parts
         print(f"[Chat-Anfrage] von {peer_nick} ({peer_ip}:{peer_tcp_port})")
 
-        try:
-            chat_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            chat_sock.connect((peer_ip, int(peer_tcp_port)))
-            threading.Thread(target=chat_session, args=(chat_sock, peer_nick), daemon=True).start()
-        except Exception as e:
-            print(f"Fehler beim Chat-Aufbau: {e}")
+        antwort = input(f"Chat-Anfrage von {peer_nick} annehmen? (j/n): ").lower()
+        if antwort == 'j':
+            try:
+                chat_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                chat_sock.settimeout(5)
+                chat_sock.connect((peer_ip, int(peer_tcp_port)))
+                threading.Thread(target=chat_session, args=(chat_sock, peer_nick), daemon=True).start()
+            except Exception as e:
+                print(f"Fehler beim Chat-Aufbau: {e}")
+        else:
+            print(f"Chat-Anfrage von {peer_nick} abgelehnt.")
 
 
 def chat_session(sock, peer_name):
     print(f"Chat gestartet mit {peer_name}")
+    stop_event = threading.Event()
     def listener():
         try:
-            while True:
+            while not stop_event.is_set():
                 header = sock.recv(5)
                 if len(header) < 5:
                     return
                 length, msg_id = struct.unpack("!IB", header)
                 msg = sock.recv(length).decode("utf-8")
                 print(f"[{peer_name}] {msg}")
+        except Exception as e:
+            print(f"Listener Fehler: {e}")
         finally:
+            stop_event.set()
             sock.close()
+            print(f"Chat mit {peer_name} beendet (Listener).")
     threading.Thread(target=listener, daemon=True).start()
 
-    while True:
-        msg = input(f"[Du -> {peer_name}]: ")
-        if msg.lower() == '/exit':
-            sock.close()
-            break
-        send_tcp_msg(sock, id_peer_peer_nachr, msg)
+    try:
+        while not stop_event.is_set():
+            msg = input(f"[Du -> {peer_name}]: ")
+            if msg.lower() == '/exit':
+                stop_event.set()
+                sock.close()
+                break
+            try:
+                send_tcp_msg(sock, id_peer_peer_nachr, msg)
+            except Exception as e:
+                print(f"Fehler beim Senden: {e}")
+                stop_event.set()
+                break
+    except Exception as e:
+        print(f"Chat-Sitzung abgebrochen: {e}")
+    finally:
+        stop_event.set()
+        sock.close()
+        print(f"Chat mit {peer_name} beendet (Sender).")
+
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except:
+        return "127.0.0.1"
+    finally:
+        s.close()
 
 
 def start_peer_chat(target_nick, target_ip, target_udp, my_tcp_port):
-    udp_msg = f"{nickname}|{socket.gethostbyname(socket.gethostname())}|{my_tcp_port}"
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    tcp_sock.bind(('', my_tcp_port))
+    tcp_sock.listen(1)
+    tcp_sock.settimeout(10)
+
+    # udp_msg = f"{nickname}|{get_local_ip()}|{my_tcp_port}"
+    udp_msg = f"{nickname}|100.110.194.138|{my_tcp_port}"
+
+    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target_addr = (target_ip, int(target_udp))
 
     for i in range(3):
-        sock.sendto(udp_msg.encode('utf-8'), target_addr)
+        udp_sock.sendto(udp_msg.encode('utf-8'), target_addr)
         print(f"[UDP] Anfrage an {target_nick} gesendet ({i + 1}/3)...")
         try:
-            tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            tcp_sock.bind(('', my_tcp_port))
-            tcp_sock.listen(1)
-            tcp_sock.settimeout(3)
             conn, addr = tcp_sock.accept()
+            print(f"[TCP] Verbindung von {addr} erhalten, starte Chat...")
             chat_session(conn, target_nick)
             return
         except socket.timeout:
@@ -115,13 +156,18 @@ def start_peer_chat(target_nick, target_ip, target_udp, my_tcp_port):
     print(f"[Fehler] Chat mit {target_nick} fehlgeschlagen.")
 
 
+
 def main():
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.connect((server_ip, server_port))
 
-    ip_addr = socket.gethostbyname(socket.gethostname())
+    #ip_addr = socket.gethostbyname(socket.gethostname())
+    #ip_addr = get_local_ip()
+    ip_addr = '100.110.194.138'
     anmeldung_payload = f"{nickname}|{ip_addr}|{udp_port}"
     send_tcp_msg(tcp_sock, id_anmeldung, anmeldung_payload)
+
+    print(ip_addr)
 
     header = tcp_sock.recv(5)
     if len(header) < 5:
