@@ -12,7 +12,9 @@ id_peer_peer_nachr = 4
 id_ablehnung = 5
 id_bad_format = 6
 
+#server_ip = '127.0.0.1'
 server_ip = '100.110.194.138'
+
 # question: wie auf die Zahlen gekommen
 server_port = 22222
 udp_port = 33333
@@ -21,15 +23,6 @@ clients = {}
 
 nickname = input("Nickname: ")
 
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except:
-        return "127.0.0.1"
-    finally:
-        s.close()
 
 def send_tcp_msg(sock, msg_id, payload):
     payload_bytes = payload.encode('utf-8')
@@ -56,11 +49,6 @@ def tcp_listener(sock):
         elif msg_id == id_broadcast:
             nick, msg = payload.split('|', 1)
             print(f"[Broadcast] von {nick}] {msg}")
-            ##neu
-        elif msg_id == id_peer_peer_nachr:  # ID 4
-            parts = payload.split('|')
-            if len(parts) == 3:
-                print(f"[Neu] Peer {parts[0]} verfügbar: {parts[1]}:{parts[2]}")
         else:
             print(f"[Server] Unbekannte Nachricht: ID {msg_id} - {payload}")
 
@@ -131,6 +119,17 @@ def chat_session(sock, peer_name):
         print(f"Chat mit {peer_name} beendet (Sender).")
 
 
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def start_peer_chat(target_nick, target_ip, target_udp, my_tcp_port):
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -138,7 +137,9 @@ def start_peer_chat(target_nick, target_ip, target_udp, my_tcp_port):
     tcp_sock.listen(1)
     tcp_sock.settimeout(10)
 
-    udp_msg = f"{nickname}|{'100.110.208.214'}|{my_tcp_port}"
+    # udp_msg = f"{nickname}|{get_local_ip()}|{my_tcp_port}"
+    udp_msg = f"{nickname}|100.110.194.138|{my_tcp_port}"
+
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target_addr = (target_ip, int(target_udp))
 
@@ -154,27 +155,22 @@ def start_peer_chat(target_nick, target_ip, target_udp, my_tcp_port):
             print("[UDP] Keine Antwort, neuer Versuch...")
     print(f"[Fehler] Chat mit {target_nick} fehlgeschlagen.")
 
-def recv_all(sock, n):
-    data = b''
-    while len(data) < n:
-        packet = sock.recv(n - len(data))
-        if not packet:
-            return None
-        data += packet
-    return data
 
 
 def main():
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.connect((server_ip, server_port))
 
-    ip_addr = '100.110.208.214' #get_local_ip() # socket.gethostbyname(socket.gethostname())
+    #ip_addr = socket.gethostbyname(socket.gethostname())
+    #ip_addr = get_local_ip()
+    ip_addr = '100.110.194.138'
     anmeldung_payload = f"{nickname}|{ip_addr}|{udp_port}"
     send_tcp_msg(tcp_sock, id_anmeldung, anmeldung_payload)
 
-    print(anmeldung_payload)
-    header = recv_all(tcp_sock, 5)  #tcp_sock.recv(5)
-    if not header: #len(header) < 5:
+    print(ip_addr)
+
+    header = tcp_sock.recv(5)
+    if len(header) < 5:
         print("Verbindung getrennt.")
         return
 
@@ -183,8 +179,7 @@ def main():
         print("Nickname ist schon vergeben!")
         return
     elif msg_id == id_peerliste:
-        #payload = tcp_sock.recv(length).decode('utf-8')
-        payload = recv_all(tcp_sock, length).decode("utf-8")
+        payload = tcp_sock.recv(length).decode('utf-8')
         print("[Peerliste]")
         print(payload)
 

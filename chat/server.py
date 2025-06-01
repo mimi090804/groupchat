@@ -106,10 +106,15 @@ def handle_client(sock):
             print(f"{nickname} registered from {ip}:{udp_port}")
 
             #peer_list = '\n'.join([f"{nick}|{info[0]}|{info[1]}" for nick, info in clients.items() if nick != nickname])
-            peer_list = '\n'.join([f"{nick}|{info['ip']}|{info['udp']}" for nick, info in clients.items() if nick != nickname])
+            #send_message(sock, id_peerliste, peer_list)
+
+            peer_list = '\n'.join(
+                [f"{nick}|{info['ip']}|{info['udp']}" for nick, info in clients.items() if nick != nickname])
             send_message(sock, id_peerliste, peer_list)
 
-            forward_broadcast(id_anmeldung, f"{nickname}|{ip}|{udp_port}")
+           # forward_broadcast(id_anmeldung, f"{nickname}|{ip}|{udp_port}")
+            forward_broadcast(nickname, f"{ip}|{udp_port}")
+
             notify_peers_join(nickname, ip, udp_port)
             threading.Thread(target=client_listener, args=(nickname, sock), daemon=True).start()
 
